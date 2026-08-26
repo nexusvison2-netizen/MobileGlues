@@ -8,6 +8,7 @@
 #include "../egl/context.h"
 #include <mutex>
 #include <memory>
+#include <unordered_map>
 #include "GLES3/gl32.h"
 #include <cmath>
 #include <cstdlib>
@@ -27,6 +28,7 @@
 #include "log.h"
 #include "transfer.h"
 #include "pixel.h"
+#include "buffer.h"
 #include "mg.h"
 #include <GL/gl.h>
 
