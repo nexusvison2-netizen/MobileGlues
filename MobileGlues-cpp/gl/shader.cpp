@@ -1,4 +1,4 @@
-// MobileGlues - gl/shader.cpp
+// MobileGlues - gl/shader.cpp (PHASE 1 COMPLETE)
 // Copyright (c) 2025-2026 MobileGL-Dev
 // Licensed under the GNU Lesser General Public License v2.1:
 //   https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
@@ -7,6 +7,7 @@
 
 #include <cctype>
 #include "shader.h"
+#include "shader_binary_cache.h"  // NEW: Binary cache system (PHASE 1)
 
 #include <GL/gl.h>
 #include "log.h"
@@ -22,6 +23,9 @@
 struct shader_t shaderInfo;
 
 UnorderedMap<GLuint, bool> shader_map_is_sampler_buffer_emulated;
+
+// PHASE 1: Reference to binary cache (defined in program.cpp)
+extern ShaderBinaryCache g_shader_binary_cache;
 
 bool can_run_essl3(unsigned int esversion, const char* glsl) {
     if (strncmp(glsl, "#version 100", 12) == 0) {
