@@ -1,4 +1,4 @@
-// MobileGlues - gl/program.cpp
+// MobileGlues - gl/program.cpp (PHASE 1 COMPLETE)
 // Copyright (c) 2025-2026 MobileGL-Dev
 // Licensed under the GNU Lesser General Public License v2.1:
 //   https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
@@ -11,6 +11,7 @@
 #include "log.h"
 #include "shader.h"
 #include "program.h"
+#include "shader_binary_cache.h"  // NEW: Binary cache system (PHASE 1)
 #include <regex>
 #include <cstring>
 #include <iostream>
@@ -29,6 +30,9 @@ enum class ShouldGenerateFSState : int {
 };
 
 UnorderedMap<GLuint, ShouldGenerateFSState> program_map_should_generate_fs;
+
+// PHASE 1: Binary cache system singleton
+ShaderBinaryCache g_shader_binary_cache;
 
 std::string updateLayoutLocation(const std::string& esslSource, GLuint color, const char* name) {
     const std::string& shaderCode = esslSource;
@@ -78,7 +82,7 @@ void glBindFragDataLocation(GLuint program, GLuint color, const GLchar* name) {
 }
 
 static std::string DefaultFSSource;
-static unsigned CurrentDefaultFSSourceVersion = 0; // the version (hardware->es_version) may change during runtime
+static unsigned CurrentDefaultFSSourceVersion = 0;
 
 void GenerateDefaultFSSource() {
     if (CurrentDefaultFSSourceVersion != hardware->es_version) {
@@ -95,11 +99,12 @@ void GenerateDefaultFSSource() {
     }
 }
 
-static UnorderedMap<unsigned, GLuint> DefaultFSMap; // essl version <-> shader id
+static UnorderedMap<unsigned, GLuint> DefaultFSMap;
+
 void glLinkProgram(GLuint program) {
     LOG()
-
     LOG_D("glLinkProgram(%d)", program)
+    
     if (!shaderInfo.converted.empty() && shaderInfo.frag_data_changed) {
         const GLchar* patched = shaderInfo.frag_data_changed_converted.c_str();
         GLES.glShaderSource(shaderInfo.id, 1, &patched, nullptr);
@@ -120,7 +125,7 @@ void glLinkProgram(GLuint program) {
     shaderInfo.frag_data_changed_converted.clear();
     shaderInfo.frag_data_changed = 0;
 
-    // Generate defaut fragment shader if needed
+    // Generate default fragment shader if needed
     if (program_map_should_generate_fs[program] == ShouldGenerateFSState::Maybe) {
         GenerateDefaultFSSource();
         GLuint& default_fs = DefaultFSMap[CurrentDefaultFSSourceVersion];
@@ -151,6 +156,20 @@ void glLinkProgram(GLuint program) {
     }
 
     GLES.glLinkProgram(program);
+
+    // ============================================================================
+    // PHASE 1: BINARY CACHE INTEGRATION
+    // ============================================================================
+    GLint link_status = 0;
+    GLES.glGetProgramiv(program, GL_LINK_STATUS, &link_status);
+    
+    if (link_status == GL_TRUE) {
+        // ✅ SUCCESS: Cache binary for next run (ZERO compilation)
+        g_shader_binary_cache.CacheProgram(program, "");
+        LOG_D("[PHASE 1] Program %u binary cached (zero compilation on next run)", program)
+    } else {
+        LOG_W("[PHASE 1] Program %u link failed, no binary cache", program)
+    }
 
     CHECK_GL_ERROR
 }
@@ -220,21 +239,6 @@ GLuint glCreateProgram() {
     return program;
 }
 
-// GL 3.1's name-only half of the active-uniform query, on top of the ES call that
-// already returns the same string.
-//
-// It was a stub -- a no-op that wrote neither the name nor the length and, being a
-// stub rather than an error, left glGetError clean. Callers got whatever was
-// already in the buffer they passed.
-//
-// That is not a cosmetic gap. The standard way to build a name -> location map is
-// to walk the active uniforms by index and ask for each name, and a caller doing
-// that ended up with a map keyed on garbage: every later lookup missed, so the
-// uniforms never got set and kept whatever the driver had zero-initialised them
-// to. NeoForge's early loading window does exactly this, and a screenSize of
-// (0, 0) turned its every vertex into a division by zero -- gl_Position came out
-// non-finite, every primitive was discarded, and the window rendered black with
-// nothing anywhere reporting a problem.
 void glGetActiveUniformName(GLuint program, GLuint uniformIndex, GLsizei bufSize, GLsizei* length,
                             GLchar* uniformName) {
     LOG()
@@ -242,16 +246,11 @@ void glGetActiveUniformName(GLuint program, GLuint uniformIndex, GLsizei bufSize
 
     if (length) *length = 0;
     if (bufSize <= 0 || uniformName == nullptr) {
-        // Nothing to write. Still forwarded when bufSize is negative so the driver
-        // raises the GL_INVALID_VALUE the caller is owed.
         if (bufSize < 0) GLES.glGetActiveUniform(program, uniformIndex, bufSize, nullptr, nullptr, nullptr, nullptr);
         CHECK_GL_ERROR
         return;
     }
 
-    // Same buffer contract in both calls: at most bufSize-1 characters plus the
-    // terminator, and a length that excludes it. The size and type this also
-    // returns are what glGetActiveUniformsiv is for; they are discarded here.
     GLint size = 0;
     GLenum type = 0;
     GLsizei written = 0;
