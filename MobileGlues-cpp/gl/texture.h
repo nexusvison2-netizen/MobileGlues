@@ -9,6 +9,8 @@
 #define MOBILEGLUES_TEXTURE_H
 
 #include <memory>
+#include <unordered_map>
+#include <atomic>
 
 #ifdef __cplusplus
 extern "C"
@@ -107,6 +109,20 @@ public:
     GLsizei depth;
 };
 
+// GL_EXT_texture_buffer support
+struct TextureBufferCacheEntry {
+    GLuint texture = 0;
+    GLuint buffer = 0;
+    GLenum internalformat = 0;
+    GLintptr offset = 0;
+    GLsizeiptr size = 0;
+    bool valid = false;
+};
+
+extern std::unordered_map<uint64_t, TextureBufferCacheEntry> g_texture_buffer_cache;
+extern std::atomic<uint64_t> g_texture_buffer_hits;
+extern std::atomic<uint64_t> g_texture_buffer_misses;
+
 // How many texture units this layer can actually track. Anything the driver
 // offers beyond this the layer cannot honour, so it must not be advertised
 // either -- see the GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS case in gl/getter.cpp.
@@ -143,5 +159,10 @@ bool mg_driver_texture_binding_at_unit(int unit, GLenum target, GLuint* out);
 // gl_state->current_tex_unit outside the windows where this layer borrows a unit
 // for its own work; this is the one that is right inside them too.
 int mg_driver_active_texture_unit(void);
+
+// GL_EXT_texture_buffer API
+GLAPI GLAPIENTRY void glGetTextureBufferCacheStatsEXT(uint64_t* hits, uint64_t* misses);
+GLAPI GLAPIENTRY void glResetTextureBufferCacheStatsEXT();
+GLAPI GLAPIENTRY GLuint glGetTextureBufferForBufferEXT(GLuint buffer, GLenum internalformat, GLintptr offset, GLsizeiptr size);
 
 #endif
